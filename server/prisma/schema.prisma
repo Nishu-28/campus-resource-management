@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model academic_term {
+  term_id          Int                @id @default(autoincrement())
+  term_name        String             @db.VarChar(50)
+  start_date       DateTime           @db.Date
+  end_date         DateTime           @db.Date
+  is_current       Boolean            @default(false)
+  holiday_calendar holiday_calendar[]
+}
+
+model approval {
+  approval_id   Int               @id @default(autoincrement())
+  booking_id    Int               @unique(map: "booking_id")
+  approved_by   Int
+  decision      approval_decision
+  remarks       String?           @db.VarChar(500)
+  approval_date DateTime?         @default(now()) @db.Timestamp(0)
+  booking       booking           @relation(fields: [booking_id], references: [booking_id], onDelete: NoAction, onUpdate: NoAction, map: "approval_ibfk_1")
+  user          user              @relation(fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "approval_ibfk_2")
+
+  @@index([approved_by], map: "approved_by")
+}
+
+model audit_log {
+  log_id      Int                    @id @default(autoincrement())
+  user_id     Int?
+  action_type audit_log_action_type?
+  table_name  String                 @db.VarChar(50)
+  record_id   Int?
+  old_value   String?                @db.Text
+  new_value   String?                @db.Text
+  ip_address  String?                @db.VarChar(45)
+  action_time DateTime?              @default(now()) @db.Timestamp(0)
+  user        user?                  @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "audit_log_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model booking {
+  booking_id        Int                    @id @default(autoincrement())
+  user_id           Int
+  resource_id       Int
+  booking_date      DateTime               @db.Date
+  start_time        DateTime               @db.Time(0)
+  end_time          DateTime               @db.Time(0)
+  purpose           String?                @db.VarChar(255)
+  attendee_count    Int                    @default(1)
+  booking_status    booking_booking_status @default(Pending)
+  is_recurring      Boolean                @default(false)
+  created_at        DateTime?              @default(now()) @db.Timestamp(0)
+  slot_id           Int?
+  term_id           Int?
+  approval          approval?
+  user              user                   @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "booking_ibfk_1")
+  resource          resource               @relation(fields: [resource_id], references: [resource_id], onDelete: NoAction, onUpdate: NoAction, map: "booking_ibfk_2")
+  notification      notification[]
+  recurring_pattern recurring_pattern[]
+  usage_log         usage_log[]
+
+  @@unique([resource_id, booking_date, slot_id], map: "uq_resource_slot")
+  @@index([user_id], map: "user_id")
+}
+
+model building {
+  building_id   Int          @id @default(autoincrement())
+  building_name String       @db.VarChar(100)
+  building_code String       @unique(map: "building_code") @db.VarChar(10)
+  address       String?      @db.VarChar(255)
+  total_floors  Int          @default(1)
+  created_at    DateTime?    @default(now()) @db.Timestamp(0)
+  department    department[]
+  resource      resource[]
+}
+
+model department {
+  dept_id                    Int                          @id @default(autoincrement())
+  dept_name                  String                       @db.VarChar(100)
+  dept_code                  String                       @unique(map: "dept_code") @db.VarChar(10)
+  building_id                Int?
+  floor_number               Int?
+  hod_name                   String?                      @db.VarChar(100)
+  contact_email              String?                      @db.VarChar(100)
+  created_at                 DateTime?                    @default(now()) @db.Timestamp(0)
+  building                   building?                    @relation(fields: [building_id], references: [building_id], onDelete: NoAction, onUpdate: NoAction, map: "department_ibfk_1")
+  department_resource_access department_resource_access[]
+  user                       user[]
+
+  @@index([building_id], map: "building_id")
+}
+
+model maintenance_log {
+  maintenance_id                         Int                       @id @default(autoincrement())
+  resource_id                            Int
+  reported_by                            Int
+  assigned_to                            Int?
+  issue_desc                             String                    @db.VarChar(500)
+  priority                               maintenance_log_priority? @default(Medium)
+  status                                 maintenance_log_status?   @default(Reported)
+  reported_date                          DateTime?                 @default(now()) @db.Timestamp(0)
+  resolved_date                          DateTime?                 @db.Timestamp(0)
+  resource                               resource                  @relation(fields: [resource_id], references: [resource_id], onDelete: NoAction, onUpdate: NoAction, map: "maintenance_log_ibfk_1")
+  user_maintenance_log_reported_byTouser user                      @relation("maintenance_log_reported_byTouser", fields: [reported_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "maintenance_log_ibfk_2")
+  user_maintenance_log_assigned_toTouser user?                     @relation("maintenance_log_assigned_toTouser", fields: [assigned_to], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "maintenance_log_ibfk_3")
+
+  @@index([assigned_to], map: "assigned_to")
+  @@index([reported_by], map: "reported_by")
+  @@index([resource_id], map: "resource_id")
+}
+
+model notification {
+  notification_id   Int                             @id @default(autoincrement())
+  user_id           Int
+  booking_id        Int?
+  message           String                          @db.VarChar(500)
+  notification_type notification_notification_type?
+  is_read           Boolean?                        @default(false)
+  created_at        DateTime?                       @default(now()) @db.Timestamp(0)
+  user              user                            @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "notification_ibfk_1")
+  booking           booking?                        @relation(fields: [booking_id], references: [booking_id], onDelete: NoAction, onUpdate: NoAction, map: "notification_ibfk_2")
+
+  @@index([booking_id], map: "booking_id")
+  @@index([user_id], map: "user_id")
+}
+
+model resource {
+  resource_id                Int                          @id @default(autoincrement())
+  resource_name              String                       @db.VarChar(100)
+  category_id                Int
+  building_id                Int?
+  floor_number               Int?
+  room_number                String?                      @db.VarChar(20)
+  capacity                   Int?
+  status                     resource_status              @default(Available)
+  description                String?                      @db.VarChar(255)
+  created_at                 DateTime?                    @default(now()) @db.Timestamp(0)
+  booking                    booking[]
+  department_resource_access department_resource_access[]
+  maintenance_log            maintenance_log[]
+  resource_category          resource_category            @relation(fields: [category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction, map: "resource_ibfk_1")
+  building                   building?                    @relation(fields: [building_id], references: [building_id], onDelete: NoAction, onUpdate: NoAction, map: "resource_ibfk_2")
+  resource_feature_map       resource_feature_map[]
+  waitlist                   waitlist[]
+
+  @@index([building_id], map: "building_id")
+  @@index([category_id], map: "category_id")
+}
+
+model resource_category {
+  category_id       Int               @id @default(autoincrement())
+  category_name     String            @unique(map: "category_name") @db.VarChar(50)
+  description       String?           @db.VarChar(255)
+  requires_approval Boolean           @default(true)
+  resource          resource[]
+  resource_policy   resource_policy[]
+}
+
+model resource_feature {
+  feature_id           Int                    @id @default(autoincrement())
+  feature_name         String                 @unique(map: "feature_name") @db.VarChar(50)
+  description          String?                @db.VarChar(255)
+  resource_feature_map resource_feature_map[]
+}
+
+model resource_feature_map {
+  resource_id      Int
+  feature_id       Int
+  resource         resource         @relation(fields: [resource_id], references: [resource_id], onDelete: NoAction, onUpdate: NoAction, map: "resource_feature_map_ibfk_1")
+  resource_feature resource_feature @relation(fields: [feature_id], references: [feature_id], onDelete: NoAction, onUpdate: NoAction, map: "resource_feature_map_ibfk_2")
+
+  @@id([resource_id, feature_id])
+  @@index([feature_id], map: "feature_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model role {
+  role_id         Int     @id @default(autoincrement())
+  role_name       String  @unique(map: "role_name") @db.VarChar(50)
+  description     String? @db.VarChar(255)
+  can_approve     Boolean @default(false)
+  can_book        Boolean @default(true)
+  max_booking_hrs Int?    @default(4)
+  user            user[]
+}
+
+model time_slot {
+  slot_id    Int      @id @default(autoincrement())
+  slot_label String   @db.VarChar(30)
+  start_time DateTime @db.Time(0)
+  end_time   DateTime @db.Time(0)
+  is_active  Boolean  @default(true)
+
+  @@unique([start_time, end_time], map: "uq_slot")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model usage_log {
+  usage_id         Int       @id @default(autoincrement())
+  booking_id       Int
+  check_in_time    DateTime? @db.Timestamp(0)
+  check_out_time   DateTime? @db.Timestamp(0)
+  actual_attendees Int?
+  feedback_rating  Int?
+  remarks          String?   @db.VarChar(255)
+  booking          booking   @relation(fields: [booking_id], references: [booking_id], onDelete: NoAction, onUpdate: NoAction, map: "usage_log_ibfk_1")
+
+  @@index([booking_id], map: "booking_id")
+}
+
+model user {
+  user_id                                           Int               @id @default(autoincrement())
+  name                                              String            @db.VarChar(100)
+  email                                             String            @unique(map: "email") @db.VarChar(100)
+  password_hash                                     String            @db.VarChar(255)
+  phone                                             String?           @db.VarChar(15)
+  dept_id                                           Int
+  role_id                                           Int
+  is_active                                         Boolean           @default(true)
+  created_at                                        DateTime?         @default(now()) @db.Timestamp(0)
+  approval                                          approval[]
+  audit_log                                         audit_log[]
+  booking                                           booking[]
+  maintenance_log_maintenance_log_reported_byTouser maintenance_log[] @relation("maintenance_log_reported_byTouser")
+  maintenance_log_maintenance_log_assigned_toTouser maintenance_log[] @relation("maintenance_log_assigned_toTouser")
+  notification                                      notification[]
+  department                                        department        @relation(fields: [dept_id], references: [dept_id], onDelete: NoAction, onUpdate: NoAction, map: "user_ibfk_1")
+  role                                              role              @relation(fields: [role_id], references: [role_id], onDelete: NoAction, onUpdate: NoAction, map: "user_ibfk_2")
+  waitlist                                          waitlist[]
+
+  @@index([dept_id], map: "dept_id")
+  @@index([role_id], map: "role_id")
+}
+
+model waitlist {
+  waitlist_id    Int              @id @default(autoincrement())
+  user_id        Int
+  resource_id    Int
+  requested_date DateTime         @db.Date
+  start_time     DateTime?        @db.Time(0)
+  end_time       DateTime?        @db.Time(0)
+  purpose        String?          @db.VarChar(255)
+  priority_order Int?             @default(0)
+  status         waitlist_status? @default(Waiting)
+  created_at     DateTime?        @default(now()) @db.Timestamp(0)
+  user           user             @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "waitlist_ibfk_1")
+  resource       resource         @relation(fields: [resource_id], references: [resource_id], onDelete: NoAction, onUpdate: NoAction, map: "waitlist_ibfk_2")
+
+  @@index([resource_id], map: "resource_id")
+  @@index([user_id], map: "user_id")
+}
+
+model department_resource_access {
+  access_id      Int        @id @default(autoincrement())
+  dept_id        Int
+  resource_id    Int
+  priority_level Int        @default(1)
+  is_owner       Boolean    @default(false)
+  department     department @relation(fields: [dept_id], references: [dept_id], onDelete: Cascade, map: "department_resource_access_ibfk_1")
+  resource       resource   @relation(fields: [resource_id], references: [resource_id], onDelete: Cascade, map: "department_resource_access_ibfk_2")
+
+  @@unique([dept_id, resource_id], map: "dept_id")
+  @@index([resource_id], map: "resource_id")
+}
+
+model holiday_calendar {
+  holiday_id    Int            @id @default(autoincrement())
+  holiday_name  String         @db.VarChar(100)
+  holiday_date  DateTime       @unique(map: "holiday_date") @db.Date
+  term_id       Int?
+  academic_term academic_term? @relation(fields: [term_id], references: [term_id], map: "holiday_calendar_ibfk_1")
+
+  @@index([term_id], map: "term_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recurring_pattern {
+  pattern_id      Int                               @id @default(autoincrement())
+  booking_id      Int
+  recurrence_type recurring_pattern_recurrence_type
+  day_of_week     recurring_pattern_day_of_week?
+  recur_start     DateTime                          @db.Date
+  recur_end       DateTime                          @db.Date
+  booking         booking                           @relation(fields: [booking_id], references: [booking_id], onDelete: Cascade, map: "recurring_pattern_ibfk_1")
+
+  @@index([booking_id], map: "booking_id")
+}
+
+model resource_policy {
+  policy_id            Int               @id @default(autoincrement())
+  category_id          Int
+  policy_name          String            @db.VarChar(100)
+  max_duration_hrs     Int               @default(2)
+  advance_booking_days Int               @default(7)
+  cancellation_hrs     Int               @default(24)
+  requires_approval    Boolean           @default(true)
+  auto_release_mins    Int               @default(15)
+  resource_category    resource_category @relation(fields: [category_id], references: [category_id], onDelete: Cascade, map: "resource_policy_ibfk_1")
+
+  @@index([category_id], map: "category_id")
+}
+
+enum audit_log_action_type {
+  INSERT
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  CANCEL
+}
+
+enum approval_decision {
+  Approved
+  Rejected
+}
+
+enum notification_notification_type {
+  Booking_Confirmation
+  Approval_Update
+  Cancellation
+  Reminder
+  Maintenance
+  General
+}
+
+enum maintenance_log_priority {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum maintenance_log_status {
+  Reported
+  In_Progress
+  Resolved
+  Closed
+}
+
+enum resource_status {
+  Available
+  Under_Maintenance
+  Retired
+}
+
+enum booking_booking_status {
+  Pending
+  Approved
+  Rejected
+  Cancelled
+  Completed
+}
+
+enum waitlist_status {
+  Waiting
+  Offered
+  Accepted
+  Expired
+}
+
+enum recurring_pattern_recurrence_type {
+  Daily
+  Weekly
+  Biweekly
+  Monthly
+}
+
+enum recurring_pattern_day_of_week {
+  Mon
+  Tue
+  Wed
+  Thu
+  Fri
+  Sat
+  Sun
+}
